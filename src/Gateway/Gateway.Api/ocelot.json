@@ -1,0 +1,61 @@
+{
+ "ReverseProxy": {
+ "Routes": {
+	 "usuarios": {
+		 "ClusterId": "cluster-usuarios",
+		 "Match": { "Path": "/api/perfil/me" },
+		 "Transforms": [],
+		 "AuthorizationPolicy": "UsuarioAutenticado"
+	 }
+	,
+	"data-protected": {
+		"ClusterId": "cluster-events",
+		"Match": { "Path": "/api/data/protected" },
+		"Transforms": [
+		  { "PathRemovePrefix": "/api/data" },
+		  { "PathPrefix": "/api/events" }
+		],
+		"AuthorizationPolicy": "UsuarioAutenticado"
+	}
+	,
+	"events_root": {
+		"ClusterId": "cluster-events",
+		"Match": { "Path": "/api/events" },
+		"Transforms": [],
+		"AuthorizationPolicy": "UsuarioAutenticado"
+	},
+	"reservations_root": {
+		"ClusterId": "cluster-events",
+		"Match": { "Path": "/api/reservations" },
+		"Transforms": [],
+		"AuthorizationPolicy": "UsuarioAutenticado"
+	},
+	"events_catchall": {
+		"ClusterId": "cluster-events",
+		"Match": { "Path": "/api/events/{**catch-all}" },
+		"Transforms": [],
+		"AuthorizationPolicy": "UsuarioAutenticado"
+	}
+	,
+	"reservations_catchall": {
+		"ClusterId": "cluster-events",
+		"Match": { "Path": "/api/reservations/{**catch-all}" },
+		"Transforms": [],
+		"AuthorizationPolicy": "UsuarioAutenticado"
+	}
+ },
+ "Clusters": {
+	 "cluster-usuarios": {
+		 "Destinations": {
+	 	 	 	 "docker": { "Address": "http://authuser:80" }
+		 }
+	 }
+	,
+	"cluster-events": {
+	 	 "Destinations": {
+	 	 	 "docker": { "Address": "http://events:80" }
+	 	 }
+	}
+ }
+ }
+}

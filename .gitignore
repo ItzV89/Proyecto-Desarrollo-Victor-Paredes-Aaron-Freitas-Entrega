@@ -1,0 +1,14 @@
+# Node
+node_modules/
+dist/
+.vite/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.vs/
+
+# IDE
+.vscode/
