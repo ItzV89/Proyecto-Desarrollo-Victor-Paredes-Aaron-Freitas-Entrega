@@ -15,13 +15,15 @@ public class EventsController : ControllerBase
     private readonly Events.Api.Infrastructure.Services.IEventBus _eventBus;
     private readonly Microsoft.AspNetCore.SignalR.IHubContext<Events.Api.Hubs.SeatHub> _hubContext;
 
-    public EventsController(EventsDbContext db, Events.Api.Infrastructure.Services.IEventBus eventBus, Microsoft.AspNetCore.SignalR.IHubContext<Events.Api.Hubs.SeatHub> hubContext)
-    {
-        _db = db;
-        _eventBus = eventBus;
-        _hubContext = hubContext;
-    }
+        private readonly System.Net.Http.IHttpClientFactory _httpFactory;
 
+        public EventsController(EventsDbContext db, Events.Api.Infrastructure.Services.IEventBus eventBus, Microsoft.AspNetCore.SignalR.IHubContext<Events.Api.Hubs.SeatHub> hubContext, System.Net.Http.IHttpClientFactory httpFactory)
+        {
+            _db = db;
+            _eventBus = eventBus;
+            _hubContext = hubContext;
+            _httpFactory = httpFactory;
+        }
     [HttpGet("protected")]
     [Microsoft.AspNetCore.Authorization.Authorize(Policy = "UsuarioAutenticado")]
     public IActionResult Protected() => Ok(new { message = "Autenticado" });

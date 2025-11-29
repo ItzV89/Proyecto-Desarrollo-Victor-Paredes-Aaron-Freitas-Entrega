@@ -3,7 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Events.Api.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-// RabbitMQ will be used in production via a specialized EventBus. For local development we register a NoopEventBus.
+// RabbitMQ se utilizará en producción a través de un EventBus especializado.
+// Para el desarrollo local registramos un NoopEventBus que evita la dependencia de RabbitMQ.
 
 var builder = WebApplication.CreateBuilder(args);
 var services = builder.Services;
@@ -21,7 +22,7 @@ services.AddCors(options =>
 
 services.AddMediatR(typeof(Program));
 
-// SignalR for realtime seat locking notifications
+// SignalR para notificaciones en tiempo real sobre bloqueo/estado de butacas
 services.AddSignalR();
 
 var connection = configuration.GetConnectionString("DefaultConnection") ?? "Host=postgres;Database=plataforma;Username=postgres;Password=postgres";
@@ -57,6 +58,12 @@ services.AddAuthorization(options =>
 services.AddHttpClient("events", client =>
 {
     client.BaseAddress = new Uri(configuration["Events:BaseUrl"] ?? "http://localhost:5000/");
+});
+
+// http client to call Reservations service (used for inter-service sync)
+services.AddHttpClient("reservations", client =>
+{
+    client.BaseAddress = new Uri(configuration["Reservations:BaseUrl"] ?? "http://localhost:5003/");
 });
 
 // background job to clean expired seat locks

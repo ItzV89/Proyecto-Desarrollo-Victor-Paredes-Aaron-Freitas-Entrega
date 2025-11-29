@@ -25,6 +25,9 @@ public class ReservationsController : ControllerBase
     public record SeatRef(Guid ScenarioId, Guid SeatId);
     public record ConfirmReservationRequest(Guid ReservationId, Guid EventId, List<SeatRef>? Seats);
 
+    // Generic notification payload used by other services to request broadcasts
+    public record ReservationNotification(string Type, Guid ReservationId, Guid EventId, List<object>? Seats);
+
     [HttpPost]
     [Microsoft.AspNetCore.Authorization.Authorize(Policy = "UsuarioAutenticado")]
     public async Task<IActionResult> Confirm([FromBody] ConfirmReservationRequest? payload)
@@ -100,6 +103,43 @@ public class ReservationsController : ControllerBase
         catch { }
 
         return CreatedAtAction(nameof(GetMy), new { id = reservation.Id }, new { reservation.Id });
+    }
+
+    [HttpPost("notify")]
+    public async Task<IActionResult> Notify([FromBody] ReservationNotification? payload)
+    {
+        if (payload == null) return BadRequest(new { message = "payload required" });
+
+        try
+        {
+            var type = payload.Type ?? string.Empty;
+            var broadcast = new { type = type, reservationId = payload.ReservationId, eventId = payload.EventId, seats = payload.Seats };
+
+            if (type == "ReservationCreated")
+            {
+                try { await _hubContext.Clients.Group(payload.EventId.ToString()).SendCoreAsync("ReservationCreated", new object[] { broadcast }); } catch { }
+            }
+            else if (type == "ReservationCancelled" || type == "ReservationExpired")
+            {
+                try { await _hubContext.Clients.Group(payload.EventId.ToString()).SendCoreAsync("ReservationCancelled", new object[] { broadcast }); } catch { }
+                // also broadcast SeatUnlocked if seats were provided
+                if (payload.Seats != null && payload.Seats.Any())
+                {
+                    try { await _hubContext.Clients.Group(payload.EventId.ToString()).SendCoreAsync("SeatUnlocked", new object[] { new { type = "SeatUnlocked", eventId = payload.EventId, seats = payload.Seats } }); } catch { }
+                }
+            }
+            else
+            {
+                // unknown/other types: just broadcast raw payload under provided type
+                try { await _hubContext.Clients.Group(payload.EventId.ToString()).SendCoreAsync(payload.Type, new object[] { broadcast }); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            try { Console.WriteLine("ReservationsController.Notify error: " + ex.Message); } catch { }
+        }
+
+        return Ok();
     }
 
     [HttpGet("my")]
