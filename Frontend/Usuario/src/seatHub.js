@@ -4,8 +4,8 @@ let connection = null;
 
 export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated, onReservationCancelled, onEventCreated, onEventUpdated, onEventDeleted, joinEventId) {
   if (connection) {
-    // if already connected and a joinEventId was provided, join that group
-    // attach handlers to existing connection (avoid missing handlers when reused)
+    // Si ya hay una conexión y se proporcionó `joinEventId`, únase a ese grupo
+    // Adjuntar manejadores a la conexión existente (evita perder handlers cuando se reutiliza)
     try {
       if (onLocked) {
         try { connection.off('SeatLocked'); } catch {}
@@ -45,13 +45,13 @@ export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated,
     } catch (e) { console.warn('seatHub: attach handlers failed', e); }
 
     if (joinEventId) {
-      try { await connection.invoke('JoinEvent', joinEventId); } catch (e) { console.warn('seatHub: joinEvent failed on existing connection', e); }
+      try { await connection.invoke('JoinEvent', joinEventId); } catch (e) { console.warn('seatHub: fallo al unirse al evento en la conexión existente', e); }
     }
     return connection;
   }
   const url = import.meta.env.VITE_EVENTS_HUB_URL || 'http://localhost:5002/hubs/seats';
 
-  // build a local connection and start it; assign to global `connection` only after start success
+  // Construir una conexión local y arrancarla; asignar a la variable compartida `connection` sólo después de iniciar correctamente
   const localConnection = new HubConnectionBuilder()
     .withUrl(url, {
       accessTokenFactory: () => window.__KEYCLOAK_TOKEN__ || ''
@@ -68,11 +68,11 @@ export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated,
   if (onEventUpdated) localConnection.on('EventUpdated', onEventUpdated);
   if (onEventDeleted) localConnection.on('EventDeleted', onEventDeleted);
   if (typeof onEventDeleted === 'function') {
-    // placeholder to keep order; SeatRemoved handler should be passed as onUnlocked or additional param by consumers
+    // marcador de posición para mantener orden; el manejador SeatRemoved se puede pasar como onUnlocked
   }
-  // support SeatRemoved handler via dynamic subscription by callers using connection.on('SeatRemoved', handler)
+  // soporte para SeatRemoved mediante suscripción dinámica: connection.on('SeatRemoved', handler)
 
-  // wait for token to be available (Keycloak may initialize asynchronously)
+  // esperar a que el token esté disponible (Keycloak puede inicializarse de forma asíncrona)
   const waitForToken = async (timeoutMs = 5000) => {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -85,9 +85,9 @@ export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated,
     try {
       console.debug('seatHub: starting connection to', url);
       const token = await waitForToken(5000);
-      if (!token) console.warn('seatHub: no token available before connect, proceeding without token (negotiate may fail)');
+      if (!token) console.warn('seatHub: no hay token disponible antes de conectar, procediendo sin token (la negociación podría fallar)');
 
-      // attempt to start and retry once on AbortError using localConnection
+      // intentar iniciar y reintentar una vez si ocurre AbortError
       try {
         await localConnection.start();
       } catch (err) {
@@ -107,7 +107,7 @@ export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated,
       }
 
       console.debug('seatHub: connection started');
-      // only set the shared connection if still null (avoid clobbering another concurrent connection)
+      // asignar la conexión compartida sólo si todavía es null (evita sobrescribir otra conexión concurrente)
       if (!connection) {
         connection = localConnection;
         try { window.__SEAT_HUB_CONNECTION__ = connection; } catch {}
@@ -117,9 +117,9 @@ export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated,
       if (joinEventId) {
         try {
           await connection.invoke('JoinEvent', joinEventId);
-          console.debug('seatHub: joined event group', joinEventId);
+          console.debug('seatHub: unido al grupo del evento', joinEventId);
         } catch (err) {
-          console.error('seatHub: join event failed', err);
+          console.error('seatHub: fallo al unirse al evento', err);
         }
       }
       return connection;
@@ -132,7 +132,7 @@ export async function connectSeatHub(onLocked, onUnlocked, onReservationCreated,
 export async function disconnectSeatHub() {
   if (!connection) return;
   try {
-    // attempt to leave all groups gracefully is not tracked here; just stop
+    // intentar abandonar los grupos de forma ordenada no se gestiona aquí; simplemente detener
     await connection.stop();
   } catch { }
   connection = null;

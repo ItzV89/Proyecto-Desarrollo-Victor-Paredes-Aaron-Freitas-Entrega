@@ -3,7 +3,7 @@ import { getEventById, lockSeat, confirmReservation, unlockSeatsByReservation } 
 import { connectSeatHub, disconnectSeatHub, joinEventGroup, leaveEventGroup } from '../seatHub';
 
 function uuidv4() {
-  // simple UUID v4 generator for client reservation ids
+  // Generador simple UUID v4 para identificadores temporales de reserva en el cliente
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
     const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
@@ -20,7 +20,7 @@ export default function EventReservation({ eventId, onClose }) {
 
   useEffect(() => {
     if (!eventId) return;
-    // if we had a previous event and a pending local reservation, attempt to unlock those seats
+    // Si teníamos un evento anterior y una reserva local pendiente, intentar liberar esos asientos
     (async () => {
       try {
         if (prevEventRef.current && prevEventRef.current.id && prevEventRef.current.id !== eventId && reservationId) {
@@ -181,7 +181,7 @@ export default function EventReservation({ eventId, onClose }) {
   };
 
   const handleClose = async () => {
-    // if we have a reservationId but not confirmed, unlock seats by reservation for all scenarios
+    // Si tenemos `reservationId` pero no está confirmada, liberar asientos por reserva para todos los escenarios
     if (reservationId && !event?.confirmed) {
       try {
         if (event?.scenarios) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getEventById, deleteSeat } from '../api';
 import { useKeycloak } from '../../KeycloakProvider';
+import { connectSeatHub, disconnectSeatHub, joinEventGroup, leaveEventGroup } from '../seatHub';
 
 export default function EventDetails({ eventId, onClose }) {
   const [event, setEvent] = useState(null);
@@ -17,6 +18,111 @@ export default function EventDetails({ eventId, onClose }) {
     getEventById(eventId).then(r => {
       setEvent(r.data);
     }).catch(e => setError(e?.response?.data || e.message)).finally(() => setLoading(false));
+  }, [eventId]);
+
+  // subscribe to SignalR hub to receive seat/reservation updates for organizers
+  useEffect(() => {
+    if (!eventId) return;
+    let mounted = true;
+
+    const onLocked = (payload) => {
+      if (!mounted) return;
+      try {
+        const p = payload || {};
+        if (!p?.eventId || p.eventId !== eventId) return;
+        const sPayload = p.seat;
+        setEvent(ev => {
+          if (!ev) return ev;
+          const newScenarios = ev.scenarios.map(s => {
+            if (s.id !== p.scenarioId) return s;
+            const updatedSeats = s.seats.map(se => se.id === sPayload.id ? { ...se, ...sPayload } : se);
+            return { ...s, seats: updatedSeats };
+          });
+          return { ...ev, scenarios: newScenarios };
+        });
+      } catch { }
+    };
+
+    const onUnlocked = (payload) => {
+      if (!mounted) return;
+      try {
+        const p = payload || {};
+        if (!p?.eventId || p.eventId !== eventId) return;
+        const seats = p.seats || [];
+        setEvent(ev => {
+          if (!ev) return ev;
+          const newScenarios = ev.scenarios.map(s => {
+            const seatsForScenario = seats.filter(x => (x.scenarioId && x.scenarioId === s.id) || (!x.scenarioId));
+            if (!seatsForScenario.length) {
+              const updatedFallback = s.seats.map(se => {
+                const found = seats.find(x => x.id === se.id || x.seatId === se.id || x.Id === se.id || x.SeatId === se.id);
+                return found ? { ...se, isAvailable: true, lockOwner: null, lockExpiresAt: null } : se;
+              });
+              return { ...s, seats: updatedFallback };
+            }
+            const updated = s.seats.map(se => {
+              const found = seatsForScenario.find(x => x.id === se.id || x.seatId === se.id || x.Id === se.id || x.SeatId === se.id);
+              return found ? { ...se, isAvailable: true, lockOwner: null, lockExpiresAt: null } : se;
+            });
+            return { ...s, seats: updated };
+          });
+          return { ...ev, scenarios: newScenarios };
+        });
+      } catch (e) { console.warn('EventDetails.onUnlocked error', e); }
+    };
+
+    const onSeatRemoved = (payload) => {
+      if (!mounted) return;
+      try {
+        const p = payload || {};
+        if (!p?.eventId || p.eventId !== eventId) return;
+        const removed = p.seats || [];
+        setEvent(ev => {
+          if (!ev) return ev;
+          const newScenarios = ev.scenarios.map(s => {
+            if (s.id !== p.scenarioId) return s;
+            const removedIds = new Set(removed.map(x => x.id));
+            const filtered = s.seats.filter(se => !removedIds.has(se.id));
+            return { ...s, seats: filtered };
+          });
+          return { ...ev, scenarios: newScenarios };
+        });
+      } catch (err) { console.warn('onSeatRemoved error', err); }
+    };
+
+    const onReservationCancelled = (payload) => {
+      if (!mounted) return;
+      try {
+        const p = payload || {};
+        if (!p?.eventId || p.eventId !== eventId) return;
+        // when a reservation is cancelled due to seat deletion, update seats and remove reservation references
+        const seats = p.seats || [];
+        setEvent(ev => {
+          if (!ev) return ev;
+          const newScenarios = ev.scenarios.map(s => {
+            const seatsForScenario = seats.filter(x => (x.scenarioId && x.scenarioId === s.id) || (!x.scenarioId));
+            if (!seatsForScenario.length) return s;
+            const updated = s.seats.map(se => {
+              const found = seatsForScenario.find(x => x.id === se.id || x.seatId === se.id || x.Id === se.id || x.SeatId === se.id);
+              return found ? { ...se, isAvailable: true, lockOwner: null, lockExpiresAt: null } : se;
+            });
+            return { ...s, seats: updated };
+          });
+          return { ...ev, scenarios: newScenarios };
+        });
+      } catch (e) { console.warn('EventDetails.onReservationCancelled error', e); }
+    };
+
+    (async () => {
+      try {
+        const conn = await connectSeatHub(onLocked, onUnlocked, null, onReservationCancelled);
+        try { conn.off && conn.off('SeatRemoved'); } catch {}
+        try { conn.on && conn.on('SeatRemoved', onSeatRemoved); } catch (e) { console.warn('attach SeatRemoved failed', e); }
+        try { await joinEventGroup(eventId); } catch (e) { }
+      } catch (err) { console.warn('EventDetails connectSeatHub failed', err); }
+    })();
+
+    return () => { mounted = false; leaveEventGroup(eventId).catch(() => {}); /* keep connection alive */ };
   }, [eventId]);
 
   if (loading) return <div>Cargando detalles...</div>;

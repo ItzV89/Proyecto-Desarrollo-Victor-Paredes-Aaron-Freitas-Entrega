@@ -20,9 +20,9 @@ export const KeycloakProvider = ({ children }) => {
 
     useEffect(() => {
         const kc = new Keycloak(keycloakConfig);
-        // allow configuring onLoad behavior via env (Vite): 'login-required' or 'check-sso'
-        // By default we do NOT pass `onLoad` to `kc.init` so Keycloak JS won't auto-redirect.
-        // If you want automatic behavior, set `VITE_KEYCLOAK_ONLOAD` to 'check-sso' or 'login-required'.
+        // Permitir configurar el comportamiento `onLoad` vía env (Vite): 'login-required' o 'check-sso'.
+        // Por defecto NO pasamos `onLoad` a `kc.init` para evitar redirecciones automáticas de Keycloak.
+        // Si se desea comportamiento automático, establecer `VITE_KEYCLOAK_ONLOAD` a 'check-sso' o 'login-required'.
         const onLoadBehavior = import.meta.env.VITE_KEYCLOAK_ONLOAD;
         let intervalId;
 
@@ -35,8 +35,9 @@ export const KeycloakProvider = ({ children }) => {
 
         if (onLoadBehavior) initOptions.onLoad = onLoadBehavior;
 
-        // NOTE: we intentionally DO NOT set `silentCheckSsoRedirectUri` here. That option triggers
-        // Keycloak's 3p cookie detection flow which uses iframes and can be blocked by CSP.
+        // NOTA: intencionalmente NO configuramos `silentCheckSsoRedirectUri` aquí. Esa opción
+        // activa el flujo de detección de cookies de terceros de Keycloak que usa iframes
+        // y puede ser bloqueado por políticas CSP.
         kc.init(initOptions)
         .then((auth) => {
             setKeycloak(kc);
