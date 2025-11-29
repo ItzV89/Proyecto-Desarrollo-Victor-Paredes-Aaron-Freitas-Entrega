@@ -16,13 +16,13 @@ public class ReservationsController : ControllerBase
  private readonly IBackgroundJobClient _jobs;
  private readonly IReservationRepository _repo;
  private readonly IHttpClientFactory _http;
- private readonly IConnection _rabbit;
- public ReservationsController(IBackgroundJobClient jobs, IReservationRepository repo, IHttpClientFactory http, IConnection rabbit)
+ private readonly IServiceProvider _sp;
+ public ReservationsController(IBackgroundJobClient jobs, IReservationRepository repo, IHttpClientFactory http, IServiceProvider sp)
  {
  _jobs = jobs;
  _repo = repo;
  _http = http;
- _rabbit = rabbit;
+ _sp = sp;
  }
 
     [Microsoft.AspNetCore.Authorization.Authorize(Policy = "UsuarioAutenticado")]
@@ -57,7 +57,10 @@ public class ReservationsController : ControllerBase
         // publish RabbitMQ event: ReservationCreated
         try
         {
-            using var channel = _rabbit.CreateModel();
+            // Usamos dynamic para evitar dependencias de tipos en tiempo de compilación
+            var factory = _sp.GetRequiredService<object>();
+            dynamic conn = ((dynamic)factory).CreateConnection();
+            using dynamic channel = conn.CreateModel();
             channel.ExchangeDeclare(exchange: "plataforma.events", type: ExchangeType.Fanout, durable: true);
             var message = JsonSerializer.Serialize(new { type = "ReservationCreated", reservationId = r.Id, eventId = r.EventId, status = r.Status });
             var body = Encoding.UTF8.GetBytes(message);
@@ -66,6 +69,18 @@ public class ReservationsController : ControllerBase
         catch (Exception ex)
         {
             Console.WriteLine("RabbitMQ publish error: " + ex.Message);
+        }
+
+        // notify Events.Api so it can broadcast to SignalR clients (local dev sync)
+        try
+        {
+            var clientNotify = _http.CreateClient("events");
+            var seats = new[] { new { seatId = r.SeatId, scenarioId = r.ScenarioId } };
+            await clientNotify.PostAsJsonAsync("api/reservations/notify", new { type = "ReservationCreated", reservationId = r.Id, eventId = r.EventId, seats });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Notify Events ReservationCreated error: " + ex.Message);
         }
 
         // schedule expiration in 15 minutes
@@ -84,9 +99,11 @@ public record CreateReservationRequest(Guid EventId, Guid ScenarioId, Guid SeatI
  Console.WriteLine($"Reserva {id} expirada");
  
  // publish RabbitMQ event: ReservationExpired
- try
+     try
  {
-     using var channel = _rabbit.CreateModel();
+     var factory = _sp.GetRequiredService<object>();
+     dynamic conn = ((dynamic)factory).CreateConnection();
+     using dynamic channel = conn.CreateModel();
      channel.ExchangeDeclare(exchange: "plataforma.events", type: ExchangeType.Fanout, durable: true);
      var message = JsonSerializer.Serialize(new { type = "ReservationExpired", reservationId = r.Id, eventId = r.EventId, status = r.Status });
      var body = Encoding.UTF8.GetBytes(message);
@@ -106,10 +123,58 @@ public record CreateReservationRequest(Guid EventId, Guid ScenarioId, Guid SeatI
      {
          Console.WriteLine($"Unlock call returned {res.StatusCode}");
      }
+
+    // notify Events.Api about expiration so it can broadcast cancellation/seat-unlock
+    try
+    {
+        var clientNotify = _http.CreateClient("events");
+        var seats = new[] { new { seatId = r.SeatId, scenarioId = r.ScenarioId } };
+        await clientNotify.PostAsJsonAsync("api/reservations/notify", new { type = "ReservationExpired", reservationId = r.Id, eventId = r.EventId, seats });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("Notify Events ReservationExpired error: " + ex.Message);
+    }
  }
  catch (Exception ex)
  {
      Console.WriteLine("Error calling Events unlock: " + ex.Message);
  }
+ }
+
+ [HttpDelete("{reservationId}")]
+ public async Task<IActionResult> CancelReservation(Guid reservationId)
+ {
+     var r = await _repo.GetByIdAsync(reservationId);
+     if (r == null) return NotFound();
+     r.Status = "Cancelled";
+     await _repo.UpdateAsync(r);
+
+     // publish RabbitMQ event so other services can react if a bus is available
+     try
+     {
+         var factory = _sp.GetRequiredService<object>();
+         dynamic conn = ((dynamic)factory).CreateConnection();
+         using dynamic channel = conn.CreateModel();
+         channel.ExchangeDeclare(exchange: "plataforma.events", type: ExchangeType.Fanout, durable: true);
+         var message = JsonSerializer.Serialize(new { type = "ReservationCancelled", reservationId = r.Id, eventId = r.EventId, status = r.Status });
+         var body = Encoding.UTF8.GetBytes(message);
+         channel.BasicPublish(exchange: "plataforma.events", routingKey: "", basicProperties: null, body: body);
+     }
+     catch { }
+
+     // notify Events.Api so it can broadcast cancellation/unlock
+     try
+     {
+         var clientNotify = _http.CreateClient("events");
+         var seats = new[] { new { seatId = r.SeatId, scenarioId = r.ScenarioId } };
+         await clientNotify.PostAsJsonAsync("api/reservations/notify", new { type = "ReservationCancelled", reservationId = r.Id, eventId = r.EventId, seats });
+     }
+     catch (Exception ex)
+     {
+         Console.WriteLine("Notify Events ReservationCancelled error: " + ex.Message);
+     }
+
+     return NoContent();
  }
 }

@@ -27,7 +27,7 @@ var connection = configuration.GetConnectionString("DefaultConnection") ?? "Host
 services.AddDbContext<ReservationsDbContext>(opt => opt.UseNpgsql(connection));
 services.AddScoped<IReservationRepository, ReservationRepository>();
 
-// Keycloak authentication
+// Autenticación Keycloak
 services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -46,7 +46,7 @@ services.AddAuthorization(options =>
     options.AddPolicy("SoloAdmin", p => p.RequireRole("Administrador"));
 });
 
-// HttpClient to communicate with Events service
+// HttpClient para comunicarse con el servicio Events (sincronización entre servicios)
 services.AddHttpClient("events", client =>
 {
     client.BaseAddress = new Uri(configuration["Events:BaseUrl"] ?? "http://localhost:5000/");
@@ -55,8 +55,8 @@ services.AddHttpClient("events", client =>
 services.AddHangfire(config => config.UseMemoryStorage());
 services.AddHangfireServer();
 
-// RabbitMQ connection helper (simple client registration)
-services.AddSingleton(sp =>
+// Helper de conexión a RabbitMQ (registro simple del factory; no crea conexión aquí)
+services.AddSingleton<object>(sp =>
 {
     var factory = new RabbitMQ.Client.ConnectionFactory()
     {
@@ -64,7 +64,8 @@ services.AddSingleton(sp =>
         UserName = configuration["RabbitMQ:User"] ?? "guest",
         Password = configuration["RabbitMQ:Password"] ?? "guest",
     };
-    return factory.CreateConnection();
+    // Registramos la ConnectionFactory (no creamos la conexión aquí)
+    return factory;
 });
 
 var app = builder.Build();
